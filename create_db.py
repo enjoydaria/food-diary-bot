@@ -1,16 +1,25 @@
-import sqlite3
+import psycopg2
+import os
+from dotenv import load_dotenv
 
-DB_NAME = "food_diary.db"
+# 📦 Загружаем переменные из .env
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# 📌 Функция для создания таблицы, если её нет
-def create_tables():
-    conn = sqlite3.connect(DB_NAME)
+# 🔌 Подключение к базе
+def get_db_connection():
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
-    
+    return conn, cursor
+
+# 📌 Создание таблицы
+def create_tables():
+    conn, cursor = get_db_connection()
+
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS meals (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
+        id SERIAL PRIMARY KEY,
+        user_id BIGINT,
         date TEXT,
         time TEXT,
         description TEXT,
@@ -18,54 +27,61 @@ def create_tables():
         proteins REAL,
         fats REAL,
         carbs REAL
-    )
+    );
     ''')
-    
+
     conn.commit()
+    cursor.close()
     conn.close()
     print("✅ Таблица 'meals' успешно создана!")
 
-# 📌 Функция для сохранения записи в БД (исправленная)
+# 📌 Сохранение записи в базу
 def save_to_db(user_id, date, time, description, calories=None, proteins=None, fats=None, carbs=None):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
+    conn, cursor = get_db_connection()
+
     cursor.execute('''
     INSERT INTO meals (user_id, date, time, description, calories, proteins, fats, carbs)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     ''', (user_id, date, time, description, calories, proteins, fats, carbs))
-    
+
     conn.commit()
+    cursor.close()
     conn.close()
 
-# 📌 Функция для получения записей за определённый период
+# 📌 Получение записей за период
 def get_meals(user_id, period="day"):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
+    conn, cursor = get_db_connection()
 
     if period == "day":
-        time_filter = "date = date('now')"
+        time_filter = "date = CURRENT_DATE"
     elif period == "week":
-        time_filter = "date >= date('now', '-7 days')"
+        time_filter = "date >= CURRENT_DATE - INTERVAL '7 days'"
     elif period == "month":
-        time_filter = "date >= date('now', '-30 days')"
+        time_filter = "date >= CURRENT_DATE - INTERVAL '30 days'"
     else:
-        time_filter = "1=1"  # Получить все записи
+        time_filter = "TRUE"  # Получить всё
 
-    cursor.execute(f"SELECT date, time, description, calories, proteins, fats, carbs FROM meals WHERE user_id = ? AND {time_filter} ORDER BY date DESC, time DESC", (user_id,))
+    cursor.execute(f'''
+        SELECT date, time, description, calories, proteins, fats, carbs
+        FROM meals
+        WHERE user_id = %s AND {time_filter}
+        ORDER BY date DESC, time DESC
+    ''', (user_id,))
+
     meals = cursor.fetchall()
+    cursor.close()
     conn.close()
-
     return meals
 
-# 📌 Функция для удаления записи по ID
+# 📌 Удаление записи по ID
 def delete_meal(meal_id):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    
-    cursor.execute("DELETE FROM meals WHERE id = ?", (meal_id,))
+    conn, cursor = get_db_connection()
+
+    cursor.execute("DELETE FROM meals WHERE id = %s", (meal_id,))
     conn.commit()
+    cursor.close()
     conn.close()
 
-# 📌 Запускаем создание таблицы при старте
-create_tables()
+# 🚀 Только один раз запускается для создания таблицы
+if __name__ == "__main__":
+    create_tables()
