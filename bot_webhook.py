@@ -3,7 +3,7 @@ import telebot
 from datetime import datetime
 import os
 import json
-from dotenv import load_dotenv
+##from dotenv import load_dotenv
 from openai import OpenAI
 
 from create_db import save_to_db  # база остаётся прежней
