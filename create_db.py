@@ -37,16 +37,21 @@ def create_tables():
 
 # 📌 Сохранение записи в базу
 def save_to_db(user_id, date, time, description, calories=None, proteins=None, fats=None, carbs=None):
-    conn, cursor = get_db_connection()
+    print("📝 Пытаемся сохранить в БД:", user_id, date, time, description, calories, proteins, fats, carbs)
+    try:
+        conn, cursor = get_db_connection()
+        cursor.execute('''
+            INSERT INTO meals (user_id, date, time, description, calories, proteins, fats, carbs)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (user_id, date, time, description, calories, proteins, fats, carbs))
+        conn.commit()
+        print("✅ Успешно записано в базу!")
+    except Exception as e:
+        print("❌ Ошибка при сохранении в БД:", e)
+    finally:
+        cursor.close()
+        conn.close()
 
-    cursor.execute('''
-    INSERT INTO meals (user_id, date, time, description, calories, proteins, fats, carbs)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-    ''', (user_id, date, time, description, calories, proteins, fats, carbs))
-
-    conn.commit()
-    cursor.close()
-    conn.close()
 
 # 📌 Получение записей за период
 def get_meals(user_id, period="day"):
