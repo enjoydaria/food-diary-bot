@@ -9,7 +9,7 @@ from openai import OpenAI
 from create_db import save_to_db  # база остаётся прежней
 
 # 📌 Загрузка .env
-load_dotenv()
+#load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "mysecret")  # для безопасности
