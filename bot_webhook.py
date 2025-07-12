@@ -46,6 +46,8 @@ def handle_text_message(message):
             max_tokens=100
         )
 
+        print(f"📸 Ответ от GPT по фото:\n{response.choices[0].message.content!r}")
+
         result_text = response.choices[0].message.content or ""
         print(f"📩 Ответ от GPT: {result_text!r}")
 
@@ -123,6 +125,9 @@ def handle_photo(message):
             ],
             max_tokens=200
         )
+
+        print(f"📸 Ответ от GPT по фото:\n{response.choices[0].message.content!r}")
+
 
         result_text = response.choices[0].message.content or ""
         print(f"📩 Ответ от GPT (фото): {result_text!r}")
