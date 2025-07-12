@@ -16,10 +16,16 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 
 # 📌 Команды старт и помощь
-@bot.message_handler(commands=['start', 'help'])
-def send_welcome(message):
-    bot.reply_to(message, "👋 Привет! Я твой дневник питания.\n\n"
-                          "📌 Напиши, что ты съел — я определю КБЖУ и сохраню это!")
+@bot.message_handler(commands=['start'])
+def send_start(message):
+    user_id = message.from_user.id
+    bot.send_message(
+        user_id,
+        f"Привет, {message.from_user.first_name} 👋\n\n"
+        "Прежде чем мы начнём путь заботы о питании, я задам тебе пару вопросов, чтобы адаптироваться под тебя 📝"
+    )
+    ask_gender(message)
+
 
 # 📌 Обработка текстовых сообщений
 @bot.message_handler(func=lambda message: True, content_types=['text'])
