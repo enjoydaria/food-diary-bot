@@ -16,15 +16,119 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 
 # 📌 Команды старт и помощь
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+from datetime import datetime
+from create_db import save_user_gender  # ты создашь эту функцию в create_db.py
+
+# Словарь для временного хранения состояния пользователя (можно заменить на БД позже)
+user_states = {}
+
+# Команда /start
 @bot.message_handler(commands=['start'])
-def send_start(message):
+def ask_gender(message):
     user_id = message.from_user.id
+    user_states[user_id] = {"step": "gender"}
+
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(KeyboardButton("Женский 👩"), KeyboardButton("Мужской 👨"))
+
     bot.send_message(
         user_id,
-        f"Привет, {message.from_user.first_name} 👋\n\n"
-        "Прежде чем мы начнём путь заботы о питании, я задам тебе пару вопросов, чтобы адаптироваться под тебя 📝"
+        "👋 Привет! Перед тем как начать, ответь, пожалуйста, на несколько вопросов.\n\n1️⃣ Какой у тебя пол?",
+        reply_markup=markup
     )
-    ask_gender(message)
+
+# Обработка ответов с кнопок
+@bot.message_handler(func=lambda message: message.text in ["Женский 👩", "Мужской 👨"])
+def handle_gender(message):
+    user_id = message.from_user.id
+    gender = "female" if "Женский" in message.text else "male"
+    user_states[user_id]["gender"] = gender
+
+    # Сохраняем в базу
+    save_user_gender(user_id, gender)
+
+    # Следующий вопрос — хочет ли рассчитать норму
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(KeyboardButton("Да, рассчитать 💪"), KeyboardButton("Нет, пока не надо ❌"))
+
+    bot.send_message(
+        user_id,
+        "2️⃣ Хочешь, я рассчитаю для тебя норму калорий и БЖУ по формуле Харриса-Бенедикта?",
+        reply_markup=markup
+    )
+
+    user_states[user_id]["step"] = "ask_bmr"
+
+# Обработка выбора расчёта КБЖУ
+@bot.message_handler(func=lambda message: message.text in ["Да, рассчитать 💪", "Нет, пока не надо ❌"])
+def handle_bmr_choice(message):
+    user_id = message.from_user.id
+
+    if message.text == "Нет, пока не надо ❌":
+        bot.send_message(user_id, "Хорошо, ты всегда можешь сделать это позже. Погнали отслеживать питание! 🍽️")
+        user_states.pop(user_id, None)
+        return
+
+    # Запрашиваем рост
+    user_states[user_id]["step"] = "height"
+    bot.send_message(user_id, "3️⃣ Введи, пожалуйста, свой рост в сантиметрах (например, 165):")
+
+# Обработка текстовых вводов (рост, вес, возраст и активность)
+@bot.message_handler(func=lambda message: message.from_user.id in user_states)
+def collect_user_data(message):
+    user_id = message.from_user.id
+    state = user_states[user_id]
+
+    try:
+        if state["step"] == "height":
+            state["height"] = int(message.text)
+            state["step"] = "weight"
+            bot.send_message(user_id, "4️⃣ Введи свой вес в кг (например, 60):")
+
+        elif state["step"] == "weight":
+            state["weight"] = float(message.text)
+            state["step"] = "age"
+            bot.send_message(user_id, "5️⃣ Сколько тебе лет?")
+
+        elif state["step"] == "age":
+            state["age"] = int(message.text)
+            state["step"] = "activity"
+            markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+            markup.add("Минимальная", "Низкая", "Средняя", "Высокая", "Очень высокая")
+            bot.send_message(
+                user_id,
+                "6️⃣ Какой у тебя уровень физической активности?",
+                reply_markup=markup
+            )
+
+        elif state["step"] == "activity":
+            activity_level = message.text.lower()
+            state["activity"] = activity_level
+
+            # Теперь можно рассчитать КБЖУ
+            bmr = calculate_bmr(
+                gender=state["gender"],
+                weight=state["weight"],
+                height=state["height"],
+                age=state["age"]
+            )
+            tdee = adjust_by_activity(bmr, activity_level)
+
+            bot.send_message(
+                user_id,
+                f"✅ Твоя дневная норма:\n"
+                f"🔥 Калории: {round(tdee)} ккал\n"
+                f"💪 Белки: {round(tdee * 0.3 / 4)} г\n"
+                f"🥑 Жиры: {round(tdee * 0.3 / 9)} г\n"
+                f"🍞 Углеводы: {round(tdee * 0.4 / 4)} г"
+            )
+
+            user_states.pop(user_id, None)
+
+    except Exception as e:
+        bot.send_message(user_id, f"⚠️ Ошибка: {e}. Попробуй ещё раз.")
+
 
 
 # 📌 Обработка текстовых сообщений
