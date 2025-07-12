@@ -49,27 +49,22 @@ def handle_text_message(message):
             max_tokens=100
         )
 
-        result_text = response.choices[0].message.content
-        print(f"📩 Ответ от GPT: {result_text!r}")  # лог для отладки
+        result_text = response.choices[0].message.content or ""
+        print(f"📩 Ответ от GPT: {result_text!r}")
 
-        if result_text is None:
-            raise ValueError("Ответ от GPT пустой (None)")
+        if not result_text.strip():
+            raise ValueError("Ответ от GPT пустой или None")
 
-        result_text = result_text.strip()
-        if not result_text.startswith("{"):
-            result_text = result_text[result_text.find("{"):]
+        if "{" not in result_text:
+            raise ValueError("В ответе нет JSON-объекта")
+
+        result_text = result_text[result_text.find("{"):].strip()
 
         try:
             nutrition = json.loads(result_text)
         except json.JSONDecodeError as e:
             print(f"❌ Ошибка при парсинге JSON: {e}")
-            nutrition = {
-                "description": "[неизвестно]",
-                "calories": None,
-                "proteins": None,
-                "fats": None,
-                "carbs": None
-            }
+            raise ValueError("GPT вернул некорректный JSON")
 
         save_to_db(
             user_id,
@@ -93,6 +88,8 @@ def handle_text_message(message):
 
     except Exception as e:
         bot.send_message(user_id, f"❌ Ошибка: {e}")
+        print(f"❌ Ошибка в обработке текста: {e}")
+
 
 # 📌 Webhook endpoint
 @app.route(f"/{WEBHOOK_SECRET}", methods=['POST'])
