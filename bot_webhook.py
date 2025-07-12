@@ -39,9 +39,7 @@ def handle_text_message(message):
         prompt = f"""
         Определи калорийность и БЖУ (белки, жиры, углеводы) для: {text}. 
         Ответь строго JSON-объектом, без пояснений, без форматирования, без других символов.
-
         Если JSON неверный, сам исправь и отправь только правильный объект:
-
         {{"calories": 0, "proteins": 0, "fats": 0, "carbs": 0}}
         """
 
@@ -51,92 +49,50 @@ def handle_text_message(message):
             max_tokens=100
         )
 
-        result_text = response.choices[0].message.content.strip()
+        result_text = response.choices[0].message.content
+        print(f"📩 Ответ от GPT: {result_text!r}")  # лог для отладки
+
+        if result_text is None:
+            raise ValueError("Ответ от GPT пустой (None)")
+
+        result_text = result_text.strip()
         if not result_text.startswith("{"):
             result_text = result_text[result_text.find("{"):]
 
         try:
             nutrition = json.loads(result_text)
-        except json.JSONDecodeError:
-            nutrition = {"calories": None, "proteins": None, "fats": None, "carbs": None}
-
-        save_to_db(user_id, date, time, text,
-                   nutrition["calories"], nutrition["proteins"], nutrition["fats"], nutrition["carbs"])
-
-        bot.reply_to(message, f"✅ Записано:\n📅 {date} ⏰ {time}\n🍽️ {text}\n🔥 Калории: {nutrition['calories']} ккал\n💪 Белки: {nutrition['proteins']} г\n🥑 Жиры: {nutrition['fats']} г\n🍞 Углеводы: {nutrition['carbs']} г")
-    except Exception as e:
-        bot.send_message(user_id, f"❌ Ошибка: {e}")
-
-# 📸 Обработка фото
-@bot.message_handler(content_types=['photo'])
-def handle_photo(message):
-    user_id = message.from_user.id
-    photo = message.photo[-1]  # фото самого высокого качества
-
-    try:
-        file_info = bot.get_file(photo.file_id)
-        file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_info.file_path}"
-
-        bot.send_message(user_id, "📸 Обрабатываю фото...")
-
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": """Определи, что изображено на фото, и посчитай калорийность и БЖУ (белки, жиры, углеводы).
-Верни строго JSON вида:
-{"description": "...", "calories": 0, "proteins": 0, "fats": 0, "carbs": 0}
-
-Никаких пояснений, только корректный JSON-объект."""
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": file_url
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=200
-        )
-
-        result_text = response.choices[0].message.content.strip()
-        if not result_text.startswith("{"):
-            result_text = result_text[result_text.find("{"):]
-
-        nutrition = json.loads(result_text)
-
-        now = datetime.now()
-        date = now.strftime("%Y-%m-%d")
-        time_str = now.strftime("%H:%M")
+        except json.JSONDecodeError as e:
+            print(f"❌ Ошибка при парсинге JSON: {e}")
+            nutrition = {
+                "description": "[неизвестно]",
+                "calories": None,
+                "proteins": None,
+                "fats": None,
+                "carbs": None
+            }
 
         save_to_db(
             user_id,
             date,
-            time_str,
-            nutrition["description"],
-            nutrition["calories"],
-            nutrition["proteins"],
-            nutrition["fats"],
-            nutrition["carbs"]
+            time,
+            text,
+            nutrition.get("calories"),
+            nutrition.get("proteins"),
+            nutrition.get("fats"),
+            nutrition.get("carbs")
         )
 
-        bot.send_message(
-            user_id,
-            f"✅ Записано по фото:\n📅 {date} ⏰ {time_str}\n🍽️ {nutrition['description']}\n"
-            f"🔥 Калории: {nutrition['calories']} ккал\n"
-            f"💪 Белки: {nutrition['proteins']} г\n"
-            f"🥑 Жиры: {nutrition['fats']} г\n"
-            f"🍞 Углеводы: {nutrition['carbs']} г"
+        bot.reply_to(
+            message,
+            f"✅ Записано:\n📅 {date} ⏰ {time}\n🍽️ {text}\n"
+            f"🔥 Калории: {nutrition.get('calories', '-')} ккал\n"
+            f"💪 Белки: {nutrition.get('proteins', '-')} г\n"
+            f"🥑 Жиры: {nutrition.get('fats', '-')} г\n"
+            f"🍞 Углеводы: {nutrition.get('carbs', '-')} г"
         )
 
     except Exception as e:
-        bot.send_message(user_id, f"❌ Ошибка при обработке фото: {e}")
+        bot.send_message(user_id, f"❌ Ошибка: {e}")
 
 # 📌 Webhook endpoint
 @app.route(f"/{WEBHOOK_SECRET}", methods=['POST'])
