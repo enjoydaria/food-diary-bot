@@ -90,3 +90,19 @@ def delete_meal(meal_id):
 # 🚀 Только один раз запускается для создания таблицы
 if __name__ == "__main__":
     create_tables()
+
+def save_user_info(user_id, field, value):
+    conn, cursor = get_db_connection()
+    try:
+        cursor.execute(f"""
+            INSERT INTO user_info (user_id, {field})
+            VALUES (%s, %s)
+            ON CONFLICT (user_id) DO UPDATE SET {field} = EXCLUDED.{field}
+        """, (user_id, value))
+        conn.commit()
+        print(f"✅ Обновили {field} для user_id={user_id}: {value}")
+    except Exception as e:
+        print(f"❌ Ошибка при обновлении user_info: {e}")
+    finally:
+        cursor.close()
+        conn.close()
