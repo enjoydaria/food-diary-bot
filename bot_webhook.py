@@ -90,6 +90,7 @@ def handle_text_message(message):
         print(f"❌ Ошибка в обработке текста: {e}")
 
 # 📸 Обработка фото
+# 📸 Этап 1 — Распознаём продукты и их количество
 @bot.message_handler(content_types=['photo'])
 def handle_photo(message):
     user_id = message.from_user.id
@@ -101,7 +102,8 @@ def handle_photo(message):
 
         bot.send_message(user_id, "📸 Обрабатываю фото...")
 
-        response = client.chat.completions.create(
+        # 📸 Этап 1 — Распознавание продуктов
+        response_1 = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {
@@ -109,10 +111,9 @@ def handle_photo(message):
                     "content": [
                         {
                             "type": "text",
-                            "text": """Определи, что изображено на фото, и посчитай калорийность и БЖУ (белки, жиры, углеводы).
-Верни строго JSON вида:
-{"description": "...", "calories": 0, "proteins": 0, "fats": 0, "carbs": 0}
-Никаких пояснений, только корректный JSON-объект."""
+                            "text": """Посмотри на это фото и перечисли все продукты, которые ты видишь. 
+Укажи примерный вес каждого продукта в граммах. Ответь строго JSON-объектом без пояснений. 
+Пример: {"products": [{"name": "лосось", "grams": 80}, {"name": "вермишель", "grams": 100}]}"""
                         },
                         {
                             "type": "image_url",
@@ -123,29 +124,53 @@ def handle_photo(message):
                     ]
                 }
             ],
+            max_tokens=300
+        )
+
+        result_text_1 = response_1.choices[0].message.content or ""
+        print(f"📩 Ответ от GPT (распознавание): {result_text_1!r}")
+
+        if not result_text_1.strip():
+            raise ValueError("GPT (распознавание) вернул пустой ответ")
+        if "{" not in result_text_1:
+            raise ValueError("В ответе GPT (распознавание) нет JSON")
+
+        result_text_1 = result_text_1[result_text_1.find("{"):].strip()
+        products_json = json.loads(result_text_1)
+        products_list = products_json.get("products", [])
+
+        if not products_list:
+            raise ValueError("GPT не распознал ни одного продукта")
+
+        # 📸 Этап 2 — Расчёт КБЖУ
+        product_description = ", ".join([f"{item['grams']} г {item['name']}" for item in products_list])
+
+        prompt_2 = f"""
+Для следующих продуктов определи суммарную калорийность и БЖУ (белки, жиры, углеводы).
+Укажи только финальный результат одним JSON-объектом. Пример:
+{{"description": "{product_description}", "calories": 0, "proteins": 0, "fats": 0, "carbs": 0}}
+
+Продукты: {product_description}
+"""
+
+        response_2 = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt_2}],
             max_tokens=200
         )
 
-        print(f"📸 Ответ от GPT по фото:\n{response.choices[0].message.content!r}")
+        result_text_2 = response_2.choices[0].message.content or ""
+        print(f"📩 Ответ от GPT (КБЖУ): {result_text_2!r}")
 
+        if not result_text_2.strip():
+            raise ValueError("GPT (КБЖУ) вернул пустой ответ")
+        if "{" not in result_text_2:
+            raise ValueError("В ответе GPT (КБЖУ) нет JSON")
 
-        result_text = response.choices[0].message.content or ""
-        print(f"📩 Ответ от GPT (фото): {result_text!r}")
+        result_text_2 = result_text_2[result_text_2.find("{"):].strip()
+        nutrition = json.loads(result_text_2)
 
-        if not result_text.strip():
-            raise ValueError("Ответ от GPT пустой или None")
-
-        if "{" not in result_text:
-            raise ValueError("В ответе нет JSON-объекта")
-
-        result_text = result_text[result_text.find("{"):].strip()
-
-        try:
-            nutrition = json.loads(result_text)
-        except json.JSONDecodeError as e:
-            print(f"❌ Ошибка при парсинге JSON: {e}")
-            raise ValueError("GPT вернул некорректный JSON")
-
+        # Сохраняем в базу
         now = datetime.now()
         date = now.strftime("%Y-%m-%d")
         time_str = now.strftime("%H:%M")
@@ -161,6 +186,7 @@ def handle_photo(message):
             nutrition.get("carbs")
         )
 
+        # Отправка результата пользователю
         bot.send_message(
             user_id,
             f"✅ Записано по фото:\n📅 {date} ⏰ {time_str}\n🍽️ {nutrition.get('description', '-')}\n"
@@ -173,6 +199,7 @@ def handle_photo(message):
     except Exception as e:
         bot.send_message(user_id, f"❌ Ошибка при обработке фото: {e}")
         print(f"❌ Ошибка в обработке фото: {e}")
+
 
 # 📌 Webhook для Telegram
 @app.route(f"/{WEBHOOK_SECRET}", methods=['POST'])
